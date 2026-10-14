@@ -1,0 +1,62 @@
+{
+  "name": "Tribal Hunter",
+  "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/header.jpg?t=1722601179",
+  "background_raw": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/page_bg_raw.jpg?t=1722601179",
+  "screenshots": [
+    {
+      "id": 0,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_eb2b04111118effd376d9036d983639cf1b94330.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_eb2b04111118effd376d9036d983639cf1b94330.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 1,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_ad42001d5cf997b1618017b2e00fd725cfe176b9.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_ad42001d5cf997b1618017b2e00fd725cfe176b9.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 2,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_e5ac5f5881983017eb82fd6dfbc4e64e043e0dd6.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_e5ac5f5881983017eb82fd6dfbc4e64e043e0dd6.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 3,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_95d9d75a4d9d73bd7fa81dceb5ae51f291f2d083.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_95d9d75a4d9d73bd7fa81dceb5ae51f291f2d083.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 4,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_c0193f4bc10558823a80596ca26ba53d472d0e81.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_c0193f4bc10558823a80596ca26ba53d472d0e81.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 5,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_6dae9c2a6649a2bb489928300472ecc5d9d1e60c.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_6dae9c2a6649a2bb489928300472ecc5d9d1e60c.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 6,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_9f59f724fba6a2857cec2c998de6af8528c20568.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_9f59f724fba6a2857cec2c998de6af8528c20568.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 7,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_aa51946767c33ee6f892bc0b78c834ef59e1d23c.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_aa51946767c33ee6f892bc0b78c834ef59e1d23c.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 8,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_e1aed75f09503781bd21f6617c89d105d24920c6.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_e1aed75f09503781bd21f6617c89d105d24920c6.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 9,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_b1a144d096008029753c4df66e12b143697e78a9.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_b1a144d096008029753c4df66e12b143697e78a9.1920x1080.jpg?t=1722601179"
+    },
+    {
+      "id": 10,
+      "path_thumbnail": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_d751d9d2c090ab800e09051066c4acc3477ef45c.600x338.jpg?t=1722601179",
+      "path_full": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1379870/ss_d751d9d2c090ab800e09051066c4acc3477ef45c.1920x1080.jpg?t=1722601179"
+    }
+  ]
+}

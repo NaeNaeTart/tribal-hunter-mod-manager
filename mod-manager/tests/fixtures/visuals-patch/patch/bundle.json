@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "name": "GUI patch fixture",
+  "shader": {
+    "name": "shd_gui_fixture",
+    "vertex": "shader/vertex.bin",
+    "pixel": "shader/pixel.bin"
+  },
+  "scripts": [
+    {
+      "name": "gml_GlobalScript_gui_fixture",
+      "file": "scripts/helpers.gml"
+    }
+  ],
+  "events": [],
+  "persistent_objects": []
+}

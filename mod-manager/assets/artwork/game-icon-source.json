@@ -1,0 +1,13 @@
+{
+  "sprite": "propspt_leafkey",
+  "frame": 0,
+  "original_dimensions": [
+    24,
+    24
+  ],
+  "game": "Tribal Hunter",
+  "artist": "Melonsoda Soft",
+  "source_archive": "original data.win backup",
+  "source_archive_sha256": "5f76a8e29d4446a259cb55727c862a1d7d01350056cd71856bc0508ccfbd16ec",
+  "scaling": "nearest-neighbor; integer enlargement; original colors and transparency"
+}

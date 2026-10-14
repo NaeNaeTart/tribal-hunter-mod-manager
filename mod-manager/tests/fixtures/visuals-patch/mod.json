@@ -1,0 +1,6 @@
+{
+  "name": "GUI patch fixture",
+  "version": "1.0.0",
+  "kind": "umt_patch",
+  "description": "Synthetic test-only bundle. Compilation is mocked; not a playable mod."
+}
