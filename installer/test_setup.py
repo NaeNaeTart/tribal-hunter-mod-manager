@@ -1,4 +1,3 @@
-"""Manager setup tests: app installation must not deploy or alter mods."""
 import tempfile,unittest,json
 from pathlib import Path
 from contextlib import nullcontext

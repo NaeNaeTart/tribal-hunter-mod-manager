@@ -1,4 +1,3 @@
-"""Bounded COPY/ADD binary patches. Game archives are read locally, never bundled."""
 from __future__ import annotations
 import argparse
 import hashlib

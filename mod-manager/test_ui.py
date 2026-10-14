@@ -1,4 +1,3 @@
-"""UI integration tests and real Windows captures, using only dummy game files."""
 from pathlib import Path
 import tempfile
 import shutil
@@ -88,7 +87,6 @@ with tempfile.TemporaryDirectory() as work, patch.object(desktop_ui, 'game_runni
         wait_job(app)
     assert (root / 'data.win').read_bytes() == b'original game'
     assert not app.manager.state['active']
-    # Reproduce a mod update made while this window is open.
     other = desktop_ui.Manager(root)
     other.apply([app.selected])
     app.reload()

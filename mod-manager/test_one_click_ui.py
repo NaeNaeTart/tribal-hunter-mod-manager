@@ -1,4 +1,3 @@
-"""Exercise live GUI request forwarding with fixture imports and no network."""
 from pathlib import Path
 import tempfile,time,threading
 from unittest.mock import patch

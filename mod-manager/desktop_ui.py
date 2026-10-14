@@ -1,4 +1,3 @@
-"""Native desktop interface. The deployment engine remains in manager.py."""
 from __future__ import annotations
 import logging
 from logging.handlers import RotatingFileHandler
@@ -139,7 +138,6 @@ class App(ctk.CTk):
         raster_width, raster_height = round(width * scale), round(height * scale)
         plate = ImageOps.fit(self.hero_source, (raster_width, raster_height), centering=(0.65, 0.25))
         tint = Image.new('RGB', plate.size, C['sidebar'])
-        # A quiet, opaque reading area; artwork opens out to the right.
         mask = Image.new('L', plate.size)
         curve = [int(255 * max(0, min(1, (x / raster_width - 0.43) / 0.35))) for x in range(raster_width)]
         mask.putdata(curve * raster_height)

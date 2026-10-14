@@ -1,4 +1,3 @@
-"""Installs the Mod Manager and compiler tools without modifying the game."""
 from pathlib import Path
 import ctypes
 import os

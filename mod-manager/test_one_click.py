@@ -1,4 +1,3 @@
-"""One-click download/import boundary tests on tiny temporary game fixtures."""
 import hashlib, io, json, tempfile, unittest, zipfile
 from pathlib import Path
 from unittest.mock import patch

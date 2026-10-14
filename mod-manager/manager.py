@@ -1,4 +1,3 @@
-"""Tribal Hunter replacement-file mod manager. Python standard library only."""
 from __future__ import annotations
 import ctypes
 import hashlib
@@ -131,7 +130,6 @@ class Manager:
                                 shutil.copyfileobj(inp, out)
             else:
                 raise ValueError('Choose a mod folder or a ZIP archive.')
-            # Accept a ZIP with one enclosing folder.
             base = unpacked
             children = list(base.iterdir())
             if len(children) == 1 and children[0].is_dir() and children[0].name != 'files':
@@ -278,7 +276,6 @@ class Manager:
 
     def compose_archive(self, base, output, packages):
         tool = self.home / 'tools' / 'umt' / 'UndertaleModCli.exe'
-        # Packaged app bundles its compiler bridge; source runs use the file beside manager.py.
         resource = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
         script = resource / 'compose_patch.csx'
         if not tool.is_file() or not script.is_file():

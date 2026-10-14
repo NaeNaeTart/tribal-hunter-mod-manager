@@ -1,4 +1,3 @@
-"""GameBanana protocol downloads. Import only; game deployment remains explicit."""
 from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
