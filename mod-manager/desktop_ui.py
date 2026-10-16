@@ -343,7 +343,7 @@ class App(ctk.CTk):
                 enabled = item['id'] in active
                 # Keep room for the state badge, even in the smallest window.
                 text = item['name'][:32] + ('…' if len(item['name']) > 32 else '')
-                subtitle = f'v{item["version"][:16]}  ·  ' + ('Requires original game' if item.get('kind') == 'binary_patch' else 'Compatible game patch' if item.get('kind') == 'umt_patch' else f'{len(item["files"])} file(s)')
+                subtitle = f'v{item["version"][:16]}  ·  ' + ('Game patch' if item.get('kind') == 'binary_patch' else 'Compatible game patch' if item.get('kind') == 'umt_patch' else f'{len(item["files"])} file(s)')
                 row_frame = ctk.CTkFrame(scroll, fg_color=C['selected'] if item['id'] == self.selected else C['panel'], corner_radius=6, border_width=1, border_color=C['gold'] if item['id'] == self.selected else C['line'])
                 row_frame.grid(row=row, column=0, sticky='ew', pady=(0, 8))
                 row_frame.grid_columnconfigure(0, weight=1)
