@@ -223,7 +223,7 @@ class App(ctk.CTk):
         self.button(lower, 'Open game folder', lambda: self.open_folder(self.manager.root), kind='quiet', width=176, icon='folder').pack(fill='x', pady=(0, 12))
         self.launch_button = self.button(lower, 'Launch game', self.launch, kind='primary', width=176, icon='play')
         self.launch_button.pack(fill='x')
-        self.label(lower, 'Version 1.1.0', 11, color=C['muted']).pack(anchor='w', pady=(14, 0), padx=4)
+        self.label(lower, 'Version 1.1.1', 11, color=C['muted']).pack(anchor='w', pady=(14, 0), padx=4)
 
     def show_page(self, page):
         if self.busy:

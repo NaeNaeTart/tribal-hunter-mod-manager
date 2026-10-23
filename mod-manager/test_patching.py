@@ -170,16 +170,18 @@ class TestBspatchViaDispatcher(unittest.TestCase):
             patching.apply_patch(self.source, self.patch, self.output)
         self.assertFalse(self.output.exists())
 
-    def test_trailer_required(self):
-        """A raw bsdiff file without our trailer must be rejected."""
+    def test_raw_bspatch_supported(self):
         bsdiff_exe = patching._find_tool('bsdiff')
         raw_patch = self.base / 'raw.bspatch'
         subprocess.check_call(
             [str(bsdiff_exe), str(self.source), str(self.target), str(raw_patch)],
             creationflags=0x08000000 if os.name == 'nt' else 0,
         )
-        with self.assertRaisesRegex(ValueError, 'verification trailer'):
-            patching.inspect_patch(raw_patch, fmt='bspatch')
+        info = patching.inspect_patch(raw_patch, fmt='bspatch')
+        self.assertEqual(info['format'], 'bspatch')
+        self.assertIsNone(info['source_sha256'])
+        patching.apply_patch(self.source, raw_patch, self.output)
+        self.assertEqual(self.output.read_bytes(), self.mod_data)
 
     def test_corrupted_patch_cleans_up_output(self):
         patching.create_patch(self.source, self.target, self.patch, fmt='bspatch')
@@ -228,16 +230,18 @@ class TestXdeltaViaDispatcher(unittest.TestCase):
             patching.apply_patch(self.source, self.patch, self.output)
         self.assertFalse(self.output.exists())
 
-    def test_trailer_required(self):
-        """A raw xdelta file without our trailer must be rejected."""
+    def test_raw_xdelta_supported(self):
         xdelta_exe = patching._find_tool('xdelta3')
         raw_patch = self.base / 'raw.xdelta'
         subprocess.check_call(
             [str(xdelta_exe), '-e', '-s', str(self.source), str(self.target), str(raw_patch)],
             creationflags=0x08000000 if os.name == 'nt' else 0,
         )
-        with self.assertRaisesRegex(ValueError, 'verification trailer'):
-            patching.inspect_patch(raw_patch, fmt='xdelta')
+        info = patching.inspect_patch(raw_patch, fmt='xdelta')
+        self.assertEqual(info['format'], 'xdelta')
+        self.assertIsNone(info['source_sha256'])
+        patching.apply_patch(self.source, raw_patch, self.output)
+        self.assertEqual(self.output.read_bytes(), self.mod_data)
 
 
 

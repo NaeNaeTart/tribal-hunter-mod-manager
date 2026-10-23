@@ -146,6 +146,50 @@ class Manager:
                 return self.import_patch(base, meta, work)
             if meta.get('kind') == 'binary_patch':
                 return self.import_binary_patch(base, meta, work)
+
+            # Auto-detect standalone binary patch (e.g. .xdelta, .bspatch, .thpatch) without mod.json
+            patch_candidates = [
+                f for f in base.rglob('*')
+                if f.is_file() and f.suffix.lower() in ('.xdelta', '.vcdiff', '.bspatch', '.bsdiff', '.thpatch')
+            ]
+            if patch_candidates:
+                if len(patch_candidates) > 1:
+                    raise ValueError('Multiple patch files found in mod package. Expected only one.')
+                patch_file = patch_candidates[0]
+                patch_ext = patch_file.suffix.lower()
+                fmt = 'xdelta' if patch_ext in ('.xdelta', '.vcdiff') else 'bspatch' if patch_ext in ('.bspatch', '.bsdiff') else 'thpatch'
+                rel_parts = list(patch_file.relative_to(base).parts)
+                # Determine target file
+                target_file = 'data.win'
+                for allowed in ALLOWED:
+                    if allowed.lower() in patch_file.name.lower():
+                        target_file = allowed
+                        break
+                # Synthesize binary patch structure into work
+                safe_patch_dir = base / 'patch'
+                safe_patch_dir.mkdir(parents=True, exist_ok=True)
+                dest_patch = safe_patch_dir / (target_file + patch_ext)
+                if patch_file != dest_patch:
+                    shutil.move(str(patch_file), str(dest_patch))
+                # Remove extraneous helper executables from third-party zips (e.g. DeltaPatcher.exe)
+                for f in list(base.rglob('*')):
+                    if f.is_file() and f != dest_patch and f.name != 'preview.png':
+                        if f.suffix.lower() in ('.exe', '.dll') or f.name.lower().startswith(('readme', 'changelog', 'license')):
+                            try:
+                                f.unlink()
+                            except OSError:
+                                pass
+                auto_meta = {
+                    'name': str(meta.get('name', patch_file.stem.replace('_', ' ').strip()))[:120],
+                    'version': str(meta.get('version', '1.0'))[:60],
+                    'description': str(meta.get('description', ''))[:4000],
+                    'kind': 'binary_patch',
+                    'format': fmt,
+                    'target_file': target_file,
+                    'patch_file': f'patch/{target_file}{patch_ext}',
+                }
+                return self.import_binary_patch(base, auto_meta, work)
+
             payload = base / 'files' if (base / 'files').is_dir() else base
             files = {}
             for file in payload.rglob('*'):
@@ -225,7 +269,7 @@ class Manager:
                   'version': str(meta.get('version', '1.0'))[:60],
                   'description': str(meta.get('description', ''))[:4000],
                   'kind': 'binary_patch', 'format': fmt, 'target_file': target_file,
-                  'files': {target_file: result},
+                  'files': {target_file: result or 'unverified'},
                   'patch_file': stored_patch_name, 'patch_sha256': digest(patch),
                   'original_data_sha256': original, 'result_data_sha256': result}
         self.import_preview(base, dest, record)
@@ -355,12 +399,15 @@ class Manager:
                 if source.is_symlink() or digest(source) != record.get('patch_sha256'):
                     raise ValueError('Imported binary patch changed. Reimport: ' + record['name'])
                 info = patching.inspect_patch(source, fmt=fmt)
-                if info['source_sha256'] != record.get('original_data_sha256') or info['target_sha256'] != record['files'][target_file]:
+                if info.get('source_sha256') is not None and info['source_sha256'] != record.get('original_data_sha256'):
+                    raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
+                if info.get('target_sha256') is not None and info['target_sha256'] != record['files'][target_file]:
                     raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
                 if target_file in desired:
                     raise ValueError('Conflict: ' + target_file + ' is changed by two mods. Disable the other mod first.')
                 binary_patches[mod_id] = (source, fmt, target_file)
-                desired[target_file] = (mod_id, source, info['target_sha256'])
+                expected_target_hash = info.get('target_sha256') or record['files'][target_file]
+                desired[target_file] = (mod_id, source, expected_target_hash)
                 continue
             for name, expected in catalog[mod_id]['files'].items():
                 if name not in ALLOWED:
@@ -430,7 +477,13 @@ class Manager:
                 else:
                     if not binary_patch_applied_to_staged and source != staged:
                         shutil.copy2(source, staged)
-                    expected = desired[name][2] if name in desired else originals[name]
+                    staged_digest = digest(staged)
+                    if name in desired:
+                        expected = staged_digest if desired[name][2] == 'unverified' else desired[name][2]
+                        if desired[name][2] == 'unverified':
+                            desired[name] = (desired[name][0], desired[name][1], staged_digest)
+                    else:
+                        expected = originals[name]
                 if digest(staged) != expected:
                     raise RuntimeError('File changed while staging: ' + name)
             if game_running():

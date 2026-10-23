@@ -216,12 +216,20 @@ def _bspatch_inspect(patch_path: Path) -> dict:
     if new_size < 0:
         raise ValueError('BSDiff patch header: negative target size.')
     trailer = _read_bspatch_trailer(patch_path)
+    if trailer is not None:
+        return {
+            'format': 'bspatch',
+            'source_size': trailer.get('source_size'),
+            'target_size': new_size,
+            'source_sha256': trailer.get('source_sha256'),
+            'target_sha256': trailer.get('target_sha256'),
+        }
     return {
         'format': 'bspatch',
-        'source_size': trailer['source_size'],
+        'source_size': None,
         'target_size': new_size,
-        'source_sha256': trailer['source_sha256'],
-        'target_sha256': trailer['target_sha256'],
+        'source_sha256': None,
+        'target_sha256': None,
     }
 
 
@@ -229,14 +237,6 @@ _BSPATCH_TRAILER_MAGIC = b'\x00THBP'
 
 
 def _write_bspatch_trailer(patch_path: Path, source_size: int, source_sha256: str, target_sha256: str):
-    """Append a JSON metadata trailer to a .bspatch file for hash verification.
-
-    Trailer layout (appended at end of file):
-        magic  : 5 bytes  b'\\x00THBP'
-        json   : N bytes  UTF-8 encoded JSON
-        length : 4 bytes  little-endian uint32  (length of the JSON, NOT including magic+length)
-    Reading: seek(-4, 2) -> read length N -> seek(-(5+N+4), 2) -> read magic -> read JSON.
-    """
     trailer_data = json.dumps({
         'source_size': source_size,
         'source_sha256': source_sha256,
@@ -247,35 +247,32 @@ def _write_bspatch_trailer(patch_path: Path, source_size: int, source_sha256: st
         f.write(_BSPATCH_TRAILER_MAGIC + trailer_data + length_bytes)
 
 
-def _read_bspatch_trailer(patch_path: Path) -> dict:
-    """Read the metadata trailer appended by this tool. Raises if not found.
-
-    Trailer layout: [magic 5 bytes][json N bytes][length 4 bytes]
-    We read the last 4 bytes as the JSON length, then seek back to read magic + JSON.
-    """
+def _read_bspatch_trailer(patch_path: Path) -> dict | None:
     file_size = patch_path.stat().st_size
-    if file_size < 5 + 4 + 2:  # smallest plausible trailer
-        raise ValueError('BSDiff patch is missing the Tribal Hunter verification trailer. Recreate the patch with this tool.')
-    with patch_path.open('rb') as f:
-        f.seek(-4, 2)
-        length = struct.unpack('<I', f.read(4))[0]
-        # trailer is: magic(5) + json(length) + length_field(4) at end
-        trailer_size = 5 + length + 4
-        if trailer_size > file_size:
-            raise ValueError('BSDiff patch is missing the Tribal Hunter verification trailer. Recreate the patch with this tool.')
-        f.seek(-(trailer_size), 2)
-        magic = f.read(5)
-        if magic != _BSPATCH_TRAILER_MAGIC:
-            raise ValueError('BSDiff patch is missing the Tribal Hunter verification trailer. Recreate the patch with this tool.')
-        return json.loads(f.read(length).decode('utf-8'))
+    if file_size < 5 + 4 + 2:
+        return None
+    try:
+        with patch_path.open('rb') as f:
+            f.seek(-4, 2)
+            length = struct.unpack('<I', f.read(4))[0]
+            trailer_size = 5 + length + 4
+            if trailer_size > file_size:
+                return None
+            f.seek(-(trailer_size), 2)
+            magic = f.read(5)
+            if magic != _BSPATCH_TRAILER_MAGIC:
+                return None
+            return json.loads(f.read(length).decode('utf-8'))
+    except Exception:
+        return None
 
 
 def _bspatch_apply(source: Path, patch: Path, output: Path):
-    """Apply a .bspatch file using pure Python; verify source & output hashes."""
     info = _bspatch_inspect(patch)
     src_stat = source.stat()
-    if src_stat.st_size != info['source_size'] or sha256(source) != info['source_sha256']:
-        raise ValueError('BSDiff patch requires the matching clean game file. Original files were preserved.')
+    if info['source_sha256'] is not None:
+        if (info['source_size'] is not None and src_stat.st_size != info['source_size']) or sha256(source) != info['source_sha256']:
+            raise ValueError('BSDiff patch requires the matching clean game file. Original files were preserved.')
     old_bytes = source.read_bytes()
     created = False
     try:
@@ -285,7 +282,7 @@ def _bspatch_apply(source: Path, patch: Path, output: Path):
             f.write(result_bytes)
             f.flush()
             os.fsync(f.fileno())
-        if sha256(output) != info['target_sha256']:
+        if info['target_sha256'] is not None and sha256(output) != info['target_sha256']:
             raise ValueError('BSDiff patch output checksum failed. Original files were preserved.')
     except Exception:
         if created:
@@ -322,8 +319,16 @@ def _bspatch_create(source: Path, target: Path, output: Path) -> dict:
 
 
 def _xdelta_inspect(patch_path: Path) -> dict:
-    """Read the xdelta metadata JSON trailer appended by this tool."""
-    return _read_xdelta_trailer(patch_path)
+    trailer = _read_xdelta_trailer(patch_path)
+    if trailer is not None:
+        return trailer
+    return {
+        'format': 'xdelta',
+        'source_size': None,
+        'target_size': None,
+        'source_sha256': None,
+        'target_sha256': None,
+    }
 
 
 _XDELTA_TRAILER_MAGIC = b'\x00THXD'
@@ -331,10 +336,6 @@ _XDELTA_TRAILER_MAGIC = b'\x00THXD'
 
 def _write_xdelta_trailer(patch_path: Path, source_size: int, target_size: int,
                            source_sha256: str, target_sha256: str):
-    """Append a JSON metadata trailer to an xdelta patch file.
-
-    Trailer layout: [magic 5 bytes][json N bytes][length 4 bytes]
-    """
     trailer_data = json.dumps({
         'format': 'xdelta',
         'source_size': source_size,
@@ -347,59 +348,67 @@ def _write_xdelta_trailer(patch_path: Path, source_size: int, target_size: int,
         f.write(_XDELTA_TRAILER_MAGIC + trailer_data + length_bytes)
 
 
-def _read_xdelta_trailer(patch_path: Path) -> dict:
-    """Read the metadata trailer appended by this tool.
-
-    Trailer layout: [magic 5 bytes][json N bytes][length 4 bytes]
-    """
+def _read_xdelta_trailer(patch_path: Path) -> dict | None:
     file_size = patch_path.stat().st_size
     if file_size < 5 + 4 + 2:
-        raise ValueError('XDelta patch is missing the Tribal Hunter verification trailer. Recreate the patch with this tool.')
-    with patch_path.open('rb') as f:
-        f.seek(-4, 2)
-        length = struct.unpack('<I', f.read(4))[0]
-        trailer_size = 5 + length + 4
-        if trailer_size > file_size:
-            raise ValueError('XDelta patch is missing the Tribal Hunter verification trailer. Recreate the patch with this tool.')
-        f.seek(-trailer_size, 2)
-        magic = f.read(5)
-        if magic != _XDELTA_TRAILER_MAGIC:
-            raise ValueError('XDelta patch is missing the Tribal Hunter verification trailer. Recreate the patch with this tool.')
-        return json.loads(f.read(length).decode('utf-8'))
+        return None
+    try:
+        with patch_path.open('rb') as f:
+            f.seek(-4, 2)
+            length = struct.unpack('<I', f.read(4))[0]
+            trailer_size = 5 + length + 4
+            if trailer_size > file_size:
+                return None
+            f.seek(-trailer_size, 2)
+            magic = f.read(5)
+            if magic != _XDELTA_TRAILER_MAGIC:
+                return None
+            return json.loads(f.read(length).decode('utf-8'))
+    except Exception:
+        return None
 
 
 def _xdelta_apply(source: Path, patch: Path, output: Path):
-    """Apply an xdelta patch using bundled xdelta3.exe; verify source & output hashes."""
     info = _xdelta_inspect(patch)
     src_stat = source.stat()
-    if src_stat.st_size != info['source_size'] or sha256(source) != info['source_sha256']:
-        raise ValueError('XDelta patch requires the matching clean game file. Original files were preserved.')
+    if info.get('source_sha256') is not None:
+        if (info.get('source_size') is not None and src_stat.st_size != info['source_size']) or sha256(source) != info['source_sha256']:
+            raise ValueError('XDelta patch requires the matching clean game file. Original files were preserved.')
     xdelta_exe = _find_tool('xdelta3')
     patch_size = patch.stat().st_size
-    with patch.open('rb') as f:
-        f.seek(-4, 2)
-        trailer_json_len = struct.unpack('<I', f.read(4))[0]
-    vcdiff_size = patch_size - (5 + trailer_json_len + 4)
+    trailer = _read_xdelta_trailer(patch)
     temp_patch = output.with_name(output.name + '.patch_clean')
     temp_out   = output.with_name(output.name + '.xdtmp')
     temp_patch.unlink(missing_ok=True)
     temp_out.unlink(missing_ok=True)
     try:
-        with patch.open('rb') as src_f, temp_patch.open('wb') as dst_f:
-            remaining = vcdiff_size
-            while remaining:
-                chunk = src_f.read(min(65536, remaining))
-                if not chunk:
-                    break
-                dst_f.write(chunk)
-                remaining -= len(chunk)
+        if trailer is not None:
+            with patch.open('rb') as f:
+                f.seek(-4, 2)
+                trailer_json_len = struct.unpack('<I', f.read(4))[0]
+            vcdiff_size = patch_size - (5 + trailer_json_len + 4)
+            with patch.open('rb') as src_f, temp_patch.open('wb') as dst_f:
+                remaining = vcdiff_size
+                while remaining:
+                    chunk = src_f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    dst_f.write(chunk)
+                    remaining -= len(chunk)
+            patch_to_use = temp_patch
+        else:
+            patch_to_use = patch
+
         result = subprocess.run(
-            [str(xdelta_exe), '-d', '-s', str(source), str(temp_patch), str(temp_out)],
+            [str(xdelta_exe), '-d', '-s', str(source), str(patch_to_use), str(temp_out)],
             capture_output=True, creationflags=0x08000000 if os.name == 'nt' else 0
         )
         if result.returncode != 0 or not temp_out.is_file():
-            raise RuntimeError('xdelta3 failed to apply the patch:\n' + result.stderr.decode(errors='replace'))
-        if sha256(temp_out) != info['target_sha256']:
+            err_msg = result.stderr.decode(errors='replace')
+            if 'checksum mismatch' in err_msg.lower() or 'source file is incorrect' in err_msg.lower():
+                raise ValueError('XDelta patch checksum failed: your game version does not match this mod.')
+            raise RuntimeError('xdelta3 failed to apply the patch:\n' + err_msg)
+        if info.get('target_sha256') is not None and sha256(temp_out) != info['target_sha256']:
             raise ValueError('XDelta patch output checksum failed. Original files were preserved.')
         if output.exists():
             raise ValueError('Patch output file already exists.')

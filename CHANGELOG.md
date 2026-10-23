@@ -1,3 +1,11 @@
+## [1.1.1] - 2026-10-24
+
+### Fixed
+- Automatically detect loose / standalone binary patch files (.xdelta, .bspatch, .thpatch) when importing third-party mod ZIP archives (such as *Tribal Hunter: Rebalanced!*).
+- Support untrailed/raw third-party binary patches without requiring a pre-existing manifest or custom metadata trailer.
+- Safely filter out bundled third-party helper utilities (e.g. DeltaPatcher.exe) during mod import so only the game patch is registered.
+- Provide clear error messaging if an external patch fails due to a mismatched game version.
+
 # Changelog
 
 ## 1.1.0
