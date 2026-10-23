@@ -40,6 +40,7 @@ The tests use temporary, synthetic game files. The committed GUI fixture is synt
 
 ```powershell
 .\scripts\get-compiler.ps1
+.\scripts\get-patchers.ps1
 .\build.ps1
 ```
 

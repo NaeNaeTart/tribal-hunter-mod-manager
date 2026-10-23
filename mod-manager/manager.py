@@ -11,6 +11,7 @@ import tempfile
 import uuid
 import zipfile
 import delta_patch
+import patching
 
 GAME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent.parent
 ALLOWED = {'data.win', 'options.ini', 'opening_cinematic.mp4', 'titlescreen_loop.mp4',
@@ -173,29 +174,59 @@ class Manager:
             return mod_id
 
     def import_binary_patch(self, base, meta, work):
-        if meta.get('patch_file') != 'patch/data.win.thpatch':
-            raise ValueError('Binary patch must use patch/data.win.thpatch.')
-        allowed = {'mod.json', 'preview.png', 'patch/data.win.thpatch'}
+        fmt = meta.get('format', 'thpatch')
+        target_file = meta.get('target_file', 'data.win')
+        _VALID_FORMATS = ('thpatch', 'bspatch', 'xdelta')
+        if fmt not in _VALID_FORMATS:
+            raise ValueError(f'Unsupported binary patch format: {fmt!r}. Supported: ' + ', '.join(_VALID_FORMATS))
+        if target_file not in ALLOWED:
+            raise ValueError(f'Unsupported binary patch target file: {target_file!r}')
+
+        patch_rel = meta.get('patch_file') or 'patch/data.win.thpatch'
+        try:
+            parts = PurePosixPath(patch_rel).parts
+            if not parts or parts[0] != 'patch' or '..' in parts or patch_rel.startswith('/'):
+                raise ValueError()
+        except Exception:
+            raise ValueError(f'Binary patch has an unsafe patch_file path: {patch_rel!r}')
+
+        _DOCS = {'readme.md', 'readme.txt', 'license', 'license.md', 'license.txt'}
+        allowed_members = {'mod.json', 'preview.png', patch_rel}
         for file in base.rglob('*'):
             if file.is_file():
                 rel = file.relative_to(base).as_posix()
-                if rel not in allowed and rel.lower() not in {'readme.md', 'readme.txt', 'license', 'license.md', 'license.txt'}:
+                if rel not in allowed_members and rel.lower() not in _DOCS:
                     raise ValueError('Binary patch package contains an unsupported file: ' + rel)
-        patch = base / meta['patch_file']
-        info = delta_patch.inspect_patch(patch)
+
+        patch = base.joinpath(*PurePosixPath(patch_rel).parts)
+        if not patch.is_file():
+            raise ValueError(f'Binary patch file not found inside the package: {patch_rel}')
+
+        info = patching.inspect_patch(patch, fmt=fmt)
         original = self.original_hash(meta.get('original_data_sha256'))
         result = self.original_hash(meta.get('result_data_sha256'))
-        if original != info['source_sha256'] or result != info['target_sha256']:
-            raise ValueError('Binary patch header does not match its declared game hashes.')
+        if original is not None and original != info['source_sha256']:
+            raise ValueError('Binary patch declared original_data_sha256 does not match the patch header.')
+        if result is not None and result != info['target_sha256']:
+            raise ValueError('Binary patch declared result_data_sha256 does not match the patch header.')
+        if original is None:
+            original = info['source_sha256']
+        if result is None:
+            result = info['target_sha256']
+
+        _EXT = {'thpatch': '.thpatch', 'bspatch': '.bspatch', 'xdelta': '.xdelta'}
+        stored_patch_name = target_file + _EXT[fmt]
+
         mod_id = uuid.uuid4().hex
         dest = work / 'ready'
         (dest / 'files').mkdir(parents=True)
-        shutil.copy2(patch, dest / 'files' / 'data.win.thpatch')
+        shutil.copy2(patch, dest / 'files' / stored_patch_name)
         record = {'name': str(meta.get('name', 'Game patch'))[:120],
                   'version': str(meta.get('version', '1.0'))[:60],
                   'description': str(meta.get('description', ''))[:4000],
-                  'kind': 'binary_patch', 'files': {'data.win': result},
-                  'patch_file': 'data.win.thpatch', 'patch_sha256': digest(patch),
+                  'kind': 'binary_patch', 'format': fmt, 'target_file': target_file,
+                  'files': {target_file: result},
+                  'patch_file': stored_patch_name, 'patch_sha256': digest(patch),
                   'original_data_sha256': original, 'result_data_sha256': result}
         self.import_preview(base, dest, record)
         write_json(dest / 'mod.json', record)
@@ -310,18 +341,26 @@ class Manager:
                 continue
             if catalog[mod_id].get('kind') == 'binary_patch':
                 record = catalog[mod_id]
-                if record.get('patch_file') != 'data.win.thpatch' or set(record['files']) != {'data.win'}:
-                    raise ValueError('Imported binary patch manifest is invalid.')
-                source = self.mods / mod_id / 'files' / record['patch_file']
+                patch_file = record.get('patch_file')
+                fmt = record.get('format', 'thpatch')
+                target_file = record.get('target_file', 'data.win')
+                _VALID_FMTS = ('thpatch', 'bspatch', 'xdelta')
+                if fmt not in _VALID_FMTS:
+                    raise ValueError('Imported binary patch has unknown format: ' + fmt + '. Reimport: ' + record['name'])
+                if target_file not in ALLOWED:
+                    raise ValueError('Imported binary patch has unsupported target: ' + target_file + '. Reimport: ' + record['name'])
+                if not patch_file or set(record['files']) != {target_file}:
+                    raise ValueError('Imported binary patch manifest is invalid. Reimport: ' + record['name'])
+                source = self.mods / mod_id / 'files' / patch_file
                 if source.is_symlink() or digest(source) != record.get('patch_sha256'):
                     raise ValueError('Imported binary patch changed. Reimport: ' + record['name'])
-                info = delta_patch.inspect_patch(source)
-                if info['source_sha256'] != record.get('original_data_sha256') or info['target_sha256'] != record['files']['data.win']:
-                    raise ValueError('Imported binary patch hashes are invalid.')
-                if 'data.win' in desired:
-                    raise ValueError('Conflict: data.win is changed by two mods. Disable the other mod first.')
-                binary_patches[mod_id] = source
-                desired['data.win'] = (mod_id, source, info['target_sha256'])
+                info = patching.inspect_patch(source, fmt=fmt)
+                if info['source_sha256'] != record.get('original_data_sha256') or info['target_sha256'] != record['files'][target_file]:
+                    raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
+                if target_file in desired:
+                    raise ValueError('Conflict: ' + target_file + ' is changed by two mods. Disable the other mod first.')
+                binary_patches[mod_id] = (source, fmt, target_file)
+                desired[target_file] = (mod_id, source, info['target_sha256'])
                 continue
             for name, expected in catalog[mod_id]['files'].items():
                 if name not in ALLOWED:
@@ -372,9 +411,15 @@ class Manager:
                 shutil.copy2(self.root / name, self.transaction / 'rollback' / name)
                 source = desired[name][1] if name in desired else self.backups / name
                 staged = self.transaction / 'staged' / name
-                if name == 'data.win' and name in desired and desired[name][0] in binary_patches:
-                    source = self.transaction / 'binary-base.win' if patches else staged
-                    delta_patch.apply_patch(self.backups / name, binary_patches[desired[name][0]], source)
+                binary_patch_applied_to_staged = False
+                if name in desired and desired[name][0] in binary_patches:
+                    patch_source, bp_fmt, bp_target = binary_patches[desired[name][0]]
+                    bp_out = self.transaction / ('binary-base.' + name) if (name == 'data.win' and patches) else staged
+                    patching.apply_patch(self.backups / name, patch_source, bp_out, fmt=bp_fmt)
+                    if name == 'data.win' and patches:
+                        source = bp_out
+                    else:
+                        binary_patch_applied_to_staged = True
                 if name == 'data.win' and patches:
                     for record, package in patches:
                         if record.get('original_data_sha256') and record['original_data_sha256'] != originals['data.win']:
@@ -383,7 +428,7 @@ class Manager:
                     expected = digest(staged)
                     desired[name] = (None, staged, expected)
                 else:
-                    if source != staged:
+                    if not binary_patch_applied_to_staged and source != staged:
                         shutil.copy2(source, staged)
                     expected = desired[name][2] if name in desired else originals[name]
                 if digest(staged) != expected:
@@ -441,15 +486,37 @@ def main():
 if __name__ == '__main__':
     if '--make-patch' in sys.argv:
         import argparse
-        parser = argparse.ArgumentParser(description='Create a mod ZIP containing only a binary patch.')
+        parser = argparse.ArgumentParser(
+            description='Create a mod ZIP containing a binary patch.',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog=(
+                'Supported formats:\n'
+                '  thpatch  Native format (default, pure Python)\n'
+                '  bspatch  BSDiff 4.x binary diff (bundled bsdiff.exe)\n'
+                '  xdelta   XDelta3 VCDIFF (bundled xdelta3.exe)\n'
+                '\n'
+                'Examples:\n'
+                '  manager.py --make-patch clean\\data.win mod\\data.win MyMod.zip --name "My Mod"\n'
+                '  manager.py --make-patch clean\\data.win mod\\data.win MyMod.zip --name "My Mod" --format bspatch\n'
+                '  manager.py --make-patch clean\\titlescreen_loop.mp4 mod\\titlescreen_loop.mp4 MyVid.zip --name "My Video" --format xdelta --target-file titlescreen_loop.mp4\n'
+            ),
+        )
         parser.add_argument('--make-patch', nargs=3, required=True, metavar=('CLEAN', 'MODIFIED', 'ZIP'))
         parser.add_argument('--name', required=True)
         parser.add_argument('--version', default='1.0.0')
+        parser.add_argument('--format', default='thpatch', choices=('thpatch', 'bspatch', 'xdelta'),
+                            dest='fmt', metavar='FORMAT',
+                            help='Patch format: thpatch (default), bspatch, or xdelta')
+        parser.add_argument('--target-file', default='data.win', dest='target_file',
+                            help='Game file this patch targets (default: data.win)')
         parser.add_argument('--preview')
         parser.add_argument('--quiet', action='store_true')
         args = parser.parse_args()
         try:
-            delta_patch.create_package(*args.make_patch, args.name, args.version, args.preview)
+            patching.create_package(
+                *args.make_patch, args.name, args.version, args.preview,
+                description='', fmt=args.fmt, target_file=args.target_file,
+            )
         except Exception as exc:
             if getattr(sys, 'frozen', False):
                 if not args.quiet:

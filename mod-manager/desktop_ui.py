@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, simpledialog
 import customtkinter as ctk
 from PIL import Image, ImageOps
 from manager import Manager, GAME_ROOT, digest, game_running
+import patching
 
 ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('blue')
@@ -106,6 +107,7 @@ class App(ctk.CTk):
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.bind('<Control-o>', lambda _: self.import_zip())
         self.bind('<Control-f>', lambda _: self.focus_search())
+        self.bind('<Control-p>', lambda _: self.open_create_patch_dialog())
         self.bind('<F5>', lambda _: self.reload())
         self.bind('<Escape>', lambda _: self.hide_notice())
         self.show_page('Library')
@@ -221,7 +223,7 @@ class App(ctk.CTk):
         self.button(lower, 'Open game folder', lambda: self.open_folder(self.manager.root), kind='quiet', width=176, icon='folder').pack(fill='x', pady=(0, 12))
         self.launch_button = self.button(lower, 'Launch game', self.launch, kind='primary', width=176, icon='play')
         self.launch_button.pack(fill='x')
-        self.label(lower, 'Version 1.0.0', 11, color=C['muted']).pack(anchor='w', pady=(14, 0), padx=4)
+        self.label(lower, 'Version 1.1.0', 11, color=C['muted']).pack(anchor='w', pady=(14, 0), padx=4)
 
     def show_page(self, page):
         if self.busy:
@@ -279,6 +281,7 @@ class App(ctk.CTk):
         self.search_entry.bind('<KeyRelease>', lambda _: self.search.set(self.search_entry.get()))
         self.button(tools, 'Import folder', self.import_folder, width=114).grid(row=0, column=1, padx=(0, 8))
         self.button(tools, 'Import ZIP', self.import_zip, kind='primary', width=116).grid(row=0, column=2)
+        self.button(tools, 'Create Patch', self.open_create_patch_dialog, width=116).grid(row=0, column=3, padx=(8, 0))
         left = ctk.CTkFrame(self.content, fg_color='transparent')
         left.grid(row=1, column=0, sticky='nsew', padx=(0, 18))
         left.grid_columnconfigure(0, weight=1)
@@ -617,6 +620,12 @@ class App(ctk.CTk):
         if file:
             self.run_job('Importing mod.', lambda: self.manager.import_mod(file), 'Mod imported. Select it in the library to enable it.')
 
+    def open_create_patch_dialog(self):
+        """Open the Create Mod Patch dialog for mod makers."""
+        if self.busy:
+            return
+        _CreatePatchDialog(self)
+
     def import_folder(self):
         if self.busy:
             return
@@ -697,3 +706,240 @@ class App(ctk.CTk):
             self.notice_message('A file operation is in progress. Wait for it to finish before closing the app.')
         else:
             self.destroy()
+
+
+
+class _CreatePatchDialog(ctk.CTkToplevel):
+    """Dialog for mod makers to create patch packages with support for thpatch, bspatch, and xdelta."""
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Create Mod Patch Package")
+        self.geometry("660x720")
+        self.resizable(False, False)
+        self.configure(fg_color=C['bg'])
+        self.transient(app)
+        self.grab_set()
+        if (RESOURCE / 'app.ico').exists():
+            self.iconbitmap(str(RESOURCE / 'app.ico'))
+
+        self.clean_path = ctk.StringVar()
+        self.mod_path = ctk.StringVar()
+        self.output_path = ctk.StringVar()
+        self.mod_name = ctk.StringVar(value="My Mod")
+        self.mod_version = ctk.StringVar(value="1.0.0")
+        self.target_file = ctk.StringVar(value="data.win")
+        self.format_var = ctk.StringVar(value="thpatch")
+        self.preview_path = ctk.StringVar()
+        self.status_var = ctk.StringVar(value="Ready. Choose your original and modified files.")
+
+        default_clean = self.app.manager.root / "data.win"
+        if default_clean.is_file():
+            self.clean_path.set(str(default_clean))
+
+        self.build_ui()
+
+    def build_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=24, pady=20)
+
+        header = ctk.CTkFrame(container, fg_color=C['sidebar'], corner_radius=8, border_width=1, border_color=C['wood'])
+        header.pack(fill="x", pady=(0, 16))
+        ctk.CTkLabel(header, text="MOD MAKER: CREATE PATCH", font=ctk.CTkFont('Silkscreen', 18, 'bold'),
+                     text_color=C['gold']).pack(anchor="w", padx=16, pady=(12, 2))
+        ctk.CTkLabel(header, text="Generate a clean binary patch mod without distributing original game files.",
+                     font=ctk.CTkFont('Segoe UI', 12), text_color=C['muted']).pack(anchor="w", padx=16, pady=(0, 12))
+
+        form = ctk.CTkScrollableFrame(container, fg_color=C['panel'], corner_radius=8, border_width=1, border_color=C['line'],
+                                      scrollbar_button_color=C['line'], scrollbar_button_hover_color=C['hover'])
+        form.pack(fill="both", expand=True, pady=(0, 14))
+
+        self._row_picker(form, "Clean / Original File:", self.clean_path, self._pick_clean,
+                         "Path to the unmodded file (e.g. vanilla data.win)")
+
+        self._row_picker(form, "Modified File:", self.mod_path, self._pick_mod,
+                         "Path to the edited file (from UndertaleModTool or patcher)")
+
+        ctk.CTkLabel(form, text="Target Game File:", font=ctk.CTkFont('Segoe UI', 13, 'bold'), text_color=C['text']).pack(anchor="w", padx=14, pady=(8, 2))
+        from manager import ALLOWED
+        targets = sorted(list(ALLOWED))
+        target_menu = ctk.CTkOptionMenu(form, variable=self.target_file, values=targets,
+                                        fg_color=C['sidebar'], button_color=C['wood'], text_color=C['text'],
+                                        dropdown_fg_color=C['panel'], dropdown_text_color=C['text'])
+        target_menu.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(form, text="The game archive or asset this patch applies to inside the game folder.",
+                     font=ctk.CTkFont('Segoe UI', 11), text_color=C['muted']).pack(anchor="w", padx=14, pady=(0, 8))
+
+        self._row_picker(form, "Output Mod Package (.zip):", self.output_path, self._pick_output,
+                         "Where to save the generated GameBanana-ready mod ZIP")
+
+        meta_frame = ctk.CTkFrame(form, fg_color="transparent")
+        meta_frame.pack(fill="x", padx=14, pady=(4, 8))
+        meta_frame.grid_columnconfigure(0, weight=3)
+        meta_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(meta_frame, text="Mod Name:", font=ctk.CTkFont('Segoe UI', 13, 'bold'), text_color=C['text']).grid(row=0, column=0, sticky="w", pady=(0, 2))
+        ctk.CTkLabel(meta_frame, text="Version:", font=ctk.CTkFont('Segoe UI', 13, 'bold'), text_color=C['text']).grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 2))
+
+        ctk.CTkEntry(meta_frame, textvariable=self.mod_name, fg_color=C['sidebar'], border_color=C['line'], text_color=C['text']).grid(row=1, column=0, sticky="ew")
+        ctk.CTkEntry(meta_frame, textvariable=self.mod_version, fg_color=C['sidebar'], border_color=C['line'], text_color=C['text']).grid(row=1, column=1, sticky="ew", padx=(10, 0))
+
+        ctk.CTkLabel(form, text="Patch Engine / Format:", font=ctk.CTkFont('Segoe UI', 13, 'bold'), text_color=C['text']).pack(anchor="w", padx=14, pady=(8, 2))
+        fmt_bar = ctk.CTkSegmentedButton(form, values=["thpatch", "bspatch", "xdelta"], variable=self.format_var,
+                                         command=self._on_format_changed,
+                                         fg_color=C['sidebar'], selected_color=C['selected'],
+                                         selected_hover_color=C['hover'], unselected_color=C['sidebar'],
+                                         text_color=C['text'])
+        fmt_bar.pack(fill="x", padx=14, pady=(0, 4))
+        self.fmt_desc = ctk.CTkLabel(form, text="thpatch: Native pure-Python stream patcher (fast, standalone, zero dependencies)",
+                                     font=ctk.CTkFont('Segoe UI', 11), text_color=C['muted'])
+        self.fmt_desc.pack(anchor="w", padx=14, pady=(0, 8))
+
+        self._row_picker(form, "Thumbnail Preview (optional):", self.preview_path, self._pick_preview,
+                         "Optional PNG preview image for the mod manager library")
+
+        status_bar = ctk.CTkLabel(container, textvariable=self.status_var, font=ctk.CTkFont('Segoe UI', 12), text_color=C['muted'])
+        status_bar.pack(anchor="w", pady=(0, 4))
+
+        self.pbar = ctk.CTkProgressBar(container, height=4, mode="indeterminate", progress_color=C['accent'], fg_color=C['line'])
+        self.pbar.pack(fill="x", pady=(0, 10))
+        self.pbar.set(0)
+        self.pbar.pack_forget()
+
+        btn_row = ctk.CTkFrame(container, fg_color="transparent")
+        btn_row.pack(fill="x")
+        
+        self.create_btn = ctk.CTkButton(btn_row, text="Create Mod Patch", command=self._start_create,
+                                        fg_color=C['accent'], hover_color=C['accent_hover'],
+                                        text_color=C['ink'], font=ctk.CTkFont('Segoe UI', 13, 'bold'),
+                                        height=36, corner_radius=6)
+        self.create_btn.pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(btn_row, text="Cancel", command=self.destroy,
+                      fg_color=C['panel'], hover_color=C['hover'], text_color=C['text'],
+                      border_width=1, border_color=C['line'], height=36, corner_radius=6).pack(side="left")
+
+    def _row_picker(self, parent, title, var, picker_cmd, hint):
+        ctk.CTkLabel(parent, text=title, font=ctk.CTkFont('Segoe UI', 13, 'bold'), text_color=C['text']).pack(anchor="w", padx=14, pady=(6, 2))
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(0, 2))
+        row.grid_columnconfigure(0, weight=1)
+        ctk.CTkEntry(row, textvariable=var, fg_color=C['sidebar'], border_color=C['line'], text_color=C['text']).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(row, text="Browse…", width=76, command=picker_cmd, fg_color=C['wood'], hover_color=C['hover'],
+                      text_color=C['text'], height=32).grid(row=0, column=1)
+        if hint:
+            ctk.CTkLabel(parent, text=hint, font=ctk.CTkFont('Segoe UI', 11), text_color=C['muted']).pack(anchor="w", padx=14, pady=(0, 6))
+
+    def _on_format_changed(self, value):
+        descs = {
+            "thpatch": "thpatch: Native pure-Python stream patcher (fast, standalone, zero dependencies)",
+            "bspatch": "bspatch: Colin Percival BSDiff 4.x format (high binary compression, bzip2)",
+            "xdelta": "xdelta: RFC 3284 VCDIFF / XDelta3 format (industry standard for large game diffs)"
+        }
+        self.fmt_desc.configure(text=descs.get(value, ""))
+
+    def _pick_clean(self):
+        f = filedialog.askopenfilename(parent=self, title="Select Clean Game File",
+                                       filetypes=[("Game Archives / Files", "*.*")])
+        if f:
+            self.clean_path.set(f)
+            p = Path(f)
+            if p.name in ['data.win', 'options.ini', 'opening_cinematic.mp4', 'titlescreen_loop.mp4',
+                          'titlescreen_opening.avi', 'titlevideo.mp4']:
+                self.target_file.set(p.name)
+
+    def _pick_mod(self):
+        f = filedialog.askopenfilename(parent=self, title="Select Modified Game File",
+                                       filetypes=[("Modified Game Files", "*.*")])
+        if f:
+            self.mod_path.set(f)
+            if not self.output_path.get():
+                p = Path(f)
+                suggested = p.parent / (self.mod_name.get().replace(" ", "_") + "-1.0.0.zip")
+                self.output_path.set(str(suggested))
+
+    def _pick_output(self):
+        f = filedialog.asksaveasfilename(parent=self, title="Save Mod Package ZIP",
+                                         defaultextension=".zip",
+                                         filetypes=[("ZIP Mod Package", "*.zip")])
+        if f:
+            self.output_path.set(f)
+
+    def _pick_preview(self):
+        f = filedialog.askopenfilename(parent=self, title="Select Mod Thumbnail Preview",
+                                       filetypes=[("PNG Image", "*.png")])
+        if f:
+            self.preview_path.set(f)
+
+    def _start_create(self):
+        clean = self.clean_path.get().strip()
+        mod = self.mod_path.get().strip()
+        out = self.output_path.get().strip()
+        name = self.mod_name.get().strip()
+        ver = self.mod_version.get().strip() or "1.0.0"
+        fmt = self.format_var.get()
+        target = self.target_file.get()
+        preview = self.preview_path.get().strip() or None
+
+        if not clean or not os.path.isfile(clean):
+            messagebox.showerror("Validation Error", "Please select a valid clean (original) file.", parent=self)
+            return
+        if not mod or not os.path.isfile(mod):
+            messagebox.showerror("Validation Error", "Please select a valid modified file.", parent=self)
+            return
+        if not out:
+            messagebox.showerror("Validation Error", "Please specify an output ZIP file path.", parent=self)
+            return
+        if not name:
+            messagebox.showerror("Validation Error", "Please enter a mod name.", parent=self)
+            return
+
+        self.create_btn.configure(state="disabled")
+        self.status_var.set(f"Generating {fmt} patch… please wait.")
+        self.pbar.pack(fill="x", pady=(0, 10))
+        self.pbar.start()
+
+        def worker():
+            try:
+                patching.create_package(
+                    source=clean,
+                    target=mod,
+                    output_zip=out,
+                    name=name,
+                    version=ver,
+                    preview=preview,
+                    description="",
+                    fmt=fmt,
+                    target_file=target,
+                )
+                self.after(0, lambda: self._on_success(out))
+            except Exception as exc:
+                self.after(0, lambda e=exc: self._on_failure(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_success(self, zip_path):
+        self.pbar.stop()
+        self.pbar.pack_forget()
+        self.create_btn.configure(state="normal")
+        self.status_var.set("Mod patch created successfully!")
+        ans = messagebox.askyesno(
+            "Patch Created",
+            f"Successfully created mod package:\n{zip_path}\n\nWould you like to import it into your Mod Manager library now?",
+            parent=self
+        )
+        if ans:
+            try:
+                self.app.manager.import_mod(zip_path)
+                self.app.reload()
+                self.app.notice_message(f"Imported '{self.mod_name.get()}' into your library.")
+            except Exception as exc:
+                self.app.notice_message(str(exc), error=True)
+        self.destroy()
+
+    def _on_failure(self, exc):
+        self.pbar.stop()
+        self.pbar.pack_forget()
+        self.create_btn.configure(state="normal")
+        self.status_var.set(f"Error: {exc}")
+        messagebox.showerror("Patch Creation Failed", str(exc), parent=self)

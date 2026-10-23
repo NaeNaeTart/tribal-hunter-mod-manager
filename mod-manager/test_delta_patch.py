@@ -137,7 +137,7 @@ class ManagerDeltaTests(unittest.TestCase):
         for active in ([mod, other], [other, mod]):
             with self.assertRaisesRegex(ValueError, 'Conflict'):
                 self.manager.apply(active)
-        with patch('delta_patch.apply_patch', side_effect=ValueError('damaged delta')):
+        with patch('patching.apply_patch', side_effect=ValueError('damaged delta')):
             with self.assertRaisesRegex(ValueError, 'damaged'):
                 self.manager.apply([mod])
         self.assertEqual((self.root / 'data.win').read_bytes(), b'clean game archive')
@@ -147,10 +147,16 @@ class ManagerDeltaTests(unittest.TestCase):
     def test_missing_hash_and_included_full_archive_rejected(self):
         unpacked = self.base / 'unpacked'
         with zipfile.ZipFile(self.package) as archive:archive.extractall(unpacked)
-        meta_file = unpacked / 'mod.json';meta = json.loads(meta_file.read_text());meta.pop('original_data_sha256');meta_file.write_text(json.dumps(meta))
-        with self.assertRaisesRegex(ValueError, 'declared game hashes'):
+        meta_file = unpacked / 'mod.json';meta = json.loads(meta_file.read_text())
+        meta.pop('original_data_sha256', None);meta.pop('result_data_sha256', None)
+        meta_file.write_text(json.dumps(meta))
+        mod = self.manager.import_mod(unpacked)
+        self.assertEqual(self.manager.catalog()[0]['original_data_sha256'], dp.sha256(self.root / 'data.win'))
+        meta2 = dict(meta);meta2['original_data_sha256'] = 'a' * 64;meta_file.write_text(json.dumps(meta2))
+        with self.assertRaisesRegex(ValueError, 'original_data_sha256'):
             self.manager.import_mod(unpacked)
-        meta['original_data_sha256'] = dp.sha256(self.root / 'data.win');meta_file.write_text(json.dumps(meta));(unpacked / 'data.win').write_bytes(b'full archive')
+        (unpacked / 'data.win').write_bytes(b'full archive')
+        meta['original_data_sha256'] = dp.sha256(self.root / 'data.win');meta_file.write_text(json.dumps(meta))
         with self.assertRaisesRegex(ValueError, 'unsupported file'):
             self.manager.import_mod(unpacked)
 
