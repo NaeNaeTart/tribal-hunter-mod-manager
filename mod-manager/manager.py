@@ -226,6 +226,10 @@ class Manager:
         if target_file not in ALLOWED:
             raise ValueError(f'Unsupported binary patch target file: {target_file!r}')
 
+        raw_patches = meta.get('patches')
+        if raw_patches is not None:
+            return self._import_multi_source_patch(base, meta, work, fmt, target_file, raw_patches)
+
         patch_rel = meta.get('patch_file') or 'patch/data.win.thpatch'
         try:
             parts = PurePosixPath(patch_rel).parts
@@ -272,6 +276,79 @@ class Manager:
                   'files': {target_file: result or 'unverified'},
                   'patch_file': stored_patch_name, 'patch_sha256': digest(patch),
                   'original_data_sha256': original, 'result_data_sha256': result}
+        self.import_preview(base, dest, record)
+        write_json(dest / 'mod.json', record)
+        os.replace(dest, self.mods / mod_id)
+        return mod_id
+
+
+    def _import_multi_source_patch(self, base, meta, work, fmt, target_file, raw_patches):
+        """Import a multi-source binary patch package (one patch file per supported game version)."""
+        if not isinstance(raw_patches, list) or not raw_patches:
+            raise ValueError('Binary patch "patches" must be a non-empty list of version entries.')
+        _EXT = {'thpatch': '.thpatch', 'bspatch': '.bspatch', 'xdelta': '.xdelta'}
+        ext = _EXT[fmt]
+        _DOCS = {'readme.md', 'readme.txt', 'license', 'license.md', 'license.txt'}
+
+        stored_entries = []
+        stored_patch_files = {}
+        for i, entry in enumerate(raw_patches):
+            if not isinstance(entry, dict):
+                raise ValueError(f'patches[{i}] must be a JSON object.')
+            patch_rel = entry.get('patch_file')
+            if not patch_rel:
+                raise ValueError(f'patches[{i}] is missing "patch_file".')
+            try:
+                parts = PurePosixPath(patch_rel).parts
+                if not parts or parts[0] != 'patch' or '..' in parts or patch_rel.startswith('/'):
+                    raise ValueError()
+            except Exception:
+                raise ValueError(f'patches[{i}] has an unsafe patch_file path: {patch_rel!r}')
+            patch = base.joinpath(*PurePosixPath(patch_rel).parts)
+            if not patch.is_file():
+                raise ValueError(f'patches[{i}] patch file not found: {patch_rel}')
+            declared_src = self.original_hash(entry.get('source_sha256'))
+            declared_res = self.original_hash(entry.get('result_sha256'))
+            info = patching.inspect_patch(patch, fmt=fmt)
+            if declared_src is not None and info['source_sha256'] is not None and declared_src != info['source_sha256']:
+                raise ValueError(f'patches[{i}] declared source_sha256 does not match the patch header.')
+            if declared_res is not None and info['target_sha256'] is not None and declared_res != info['target_sha256']:
+                raise ValueError(f'patches[{i}] declared result_sha256 does not match the patch header.')
+            src_hash = declared_src or info['source_sha256']
+            res_hash = declared_res or info['target_sha256']
+            if src_hash is None:
+                raise ValueError(f'patches[{i}] has no source_sha256. Provide it in the patch entry or use a trailed patch.')
+            stored_name = f'{target_file}.v{i}{ext}'
+            stored_patch_files[stored_name] = patch
+            stored_entries.append({
+                'source_sha256': src_hash,
+                'patch_file': stored_name,
+                'patch_sha256': digest(patch),
+                'result_sha256': res_hash,
+            })
+
+        all_patch_rels = {f'patch/{n}' for n in stored_patch_files}
+        allowed_members = {'mod.json', 'preview.png'} | all_patch_rels
+        for file in base.rglob('*'):
+            if file.is_file():
+                rel = file.relative_to(base).as_posix()
+                if rel not in allowed_members and rel.lower() not in _DOCS:
+                    raise ValueError('Binary patch package contains an unsupported file: ' + rel)
+
+        result_hashes = {e['result_sha256'] for e in stored_entries if e['result_sha256']}
+        combined_result = result_hashes.pop() if len(result_hashes) == 1 else 'unverified'
+
+        mod_id = uuid.uuid4().hex
+        dest = work / 'ready'
+        (dest / 'files').mkdir(parents=True)
+        for stored_name, patch in stored_patch_files.items():
+            shutil.copy2(patch, dest / 'files' / stored_name)
+        record = {'name': str(meta.get('name', 'Game patch'))[:120],
+                  'version': str(meta.get('version', '1.0'))[:60],
+                  'description': str(meta.get('description', ''))[:4000],
+                  'kind': 'binary_patch', 'format': fmt, 'target_file': target_file,
+                  'files': {target_file: combined_result},
+                  'patches': stored_entries}
         self.import_preview(base, dest, record)
         write_json(dest / 'mod.json', record)
         os.replace(dest, self.mods / mod_id)
@@ -385,7 +462,6 @@ class Manager:
                 continue
             if catalog[mod_id].get('kind') == 'binary_patch':
                 record = catalog[mod_id]
-                patch_file = record.get('patch_file')
                 fmt = record.get('format', 'thpatch')
                 target_file = record.get('target_file', 'data.win')
                 _VALID_FMTS = ('thpatch', 'bspatch', 'xdelta')
@@ -393,21 +469,29 @@ class Manager:
                     raise ValueError('Imported binary patch has unknown format: ' + fmt + '. Reimport: ' + record['name'])
                 if target_file not in ALLOWED:
                     raise ValueError('Imported binary patch has unsupported target: ' + target_file + '. Reimport: ' + record['name'])
-                if not patch_file or set(record['files']) != {target_file}:
+                if set(record['files']) != {target_file}:
                     raise ValueError('Imported binary patch manifest is invalid. Reimport: ' + record['name'])
-                source = self.mods / mod_id / 'files' / patch_file
-                if source.is_symlink() or digest(source) != record.get('patch_sha256'):
-                    raise ValueError('Imported binary patch changed. Reimport: ' + record['name'])
-                info = patching.inspect_patch(source, fmt=fmt)
-                if info.get('source_sha256') is not None and info['source_sha256'] != record.get('original_data_sha256'):
-                    raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
-                if info.get('target_sha256') is not None and info['target_sha256'] != record['files'][target_file]:
-                    raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
                 if target_file in desired:
                     raise ValueError('Conflict: ' + target_file + ' is changed by two mods. Disable the other mod first.')
-                binary_patches[mod_id] = (source, fmt, target_file)
-                expected_target_hash = info.get('target_sha256') or record['files'][target_file]
-                desired[target_file] = (mod_id, source, expected_target_hash)
+                if 'patches' in record:
+                    # Multi-source: resolution deferred until originals are known.
+                    binary_patches[mod_id] = (None, fmt, target_file)
+                    desired[target_file] = (mod_id, None, record['files'][target_file])
+                else:
+                    patch_file = record.get('patch_file')
+                    if not patch_file:
+                        raise ValueError('Imported binary patch manifest is invalid. Reimport: ' + record['name'])
+                    source = self.mods / mod_id / 'files' / patch_file
+                    if source.is_symlink() or digest(source) != record.get('patch_sha256'):
+                        raise ValueError('Imported binary patch changed. Reimport: ' + record['name'])
+                    info = patching.inspect_patch(source, fmt=fmt)
+                    if info.get('source_sha256') is not None and info['source_sha256'] != record.get('original_data_sha256'):
+                        raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
+                    if info.get('target_sha256') is not None and info['target_sha256'] != record['files'][target_file]:
+                        raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
+                    binary_patches[mod_id] = (source, fmt, target_file)
+                    expected_target_hash = info.get('target_sha256') or record['files'][target_file]
+                    desired[target_file] = (mod_id, source, expected_target_hash)
                 continue
             for name, expected in catalog[mod_id]['files'].items():
                 if name not in ALLOWED:
@@ -444,7 +528,34 @@ class Manager:
                 raise RuntimeError('Original backup is missing or damaged: ' + name)
         for mod_id in active:
             record = catalog[mod_id]
-            if record.get('kind') != 'umt_patch' and 'data.win' in record['files'] and record.get('original_data_sha256'):
+            if record.get('kind') == 'binary_patch' and 'patches' in record:
+                # Resolve which patch entry matches the user's original game file.
+                user_src = originals.get(record.get('target_file', 'data.win'))
+                matched = None
+                for entry in record['patches']:
+                    if entry.get('source_sha256') == user_src:
+                        matched = entry
+                        break
+                if matched is None:
+                    supported = ', '.join(e['source_sha256'][:12] + '...' for e in record['patches'])
+                    raise ValueError(
+                        "Mod '%s' does not support your game version.\n"
+                        'Supported source hashes: %s' % (record['name'], supported))
+                stored_name = matched['patch_file']
+                source = self.mods / mod_id / 'files' / stored_name
+                if source.is_symlink() or digest(source) != matched.get('patch_sha256'):
+                    raise ValueError('Imported binary patch changed. Reimport: ' + record['name'])
+                fmt = record['format']
+                target_file = record.get('target_file', 'data.win')
+                info = patching.inspect_patch(source, fmt=fmt)
+                if info.get('source_sha256') is not None and info['source_sha256'] != user_src:
+                    raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
+                expected_target_hash = matched.get('result_sha256') or record['files'][target_file]
+                if info.get('target_sha256') is not None and expected_target_hash not in ('unverified', info['target_sha256']):
+                    raise ValueError('Imported binary patch hashes are invalid. Reimport: ' + record['name'])
+                binary_patches[mod_id] = (source, fmt, target_file)
+                desired[target_file] = (mod_id, source, expected_target_hash)
+            elif record.get('kind') != 'umt_patch' and 'data.win' in record['files'] and record.get('original_data_sha256'):
                 if record['original_data_sha256'] != originals.get('data.win'):
                     raise ValueError('Mod does not match this original game build: ' + record['name'])
         # Backups are recorded before deployment, including if staging subsequently fails.
