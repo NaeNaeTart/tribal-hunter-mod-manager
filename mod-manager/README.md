@@ -1,4 +1,4 @@
-# Tribal Hunter Mod Manager 1.0.0
+# Tribal Hunter Mod Manager 1.2.0
 
 Run `Tribal Hunter Mod Manager Setup.exe` and choose the game folder containing `Tribal Hunter.exe` and `data.win`. Setup installs the standalone manager, bundled patch compiler, usage guides and per-user GameBanana one-click handler. Python and administrator access are not required. Existing mods, backups, saves and game files are preserved.
 

@@ -1,4 +1,4 @@
-# Make a mod for Tribal Hunter Mod Manager 1.1.0
+# Make a mod for Tribal Hunter Mod Manager 1.2.0
 
 ## Supported Patch Engines
 
@@ -96,7 +96,41 @@ Example `mod.json` manifest:
 
 ---
 
-## 4. Testing & Publishing
+## 4. Cross-Version & Multi-Platform Support (Steam / GOG)
+
+Game releases across Steam, GOG, or older game versions may have different vanilla checksums. Rather than releasing separate mod packages, you can bundle multiple version patches inside a **single** mod package using the `patches` array in `mod.json`:
+
+```json
+{
+  "name": "My Multi-Platform Mod",
+  "version": "1.0.0",
+  "kind": "binary_patch",
+  "format": "bspatch",
+  "target_file": "data.win",
+  "patches": [
+    {
+      "source_sha256": "c2ee1bfa07db7f49976ca7a5e957b822...",
+      "patch_file": "patch/data.win.steam.bspatch",
+      "result_sha256": "49867cd76f20c8dbaee2fec00df9bf6a..."
+    },
+    {
+      "source_sha256": "99b1a98ae896ebac9849d52274353a01...",
+      "patch_file": "patch/data.win.gog.bspatch",
+      "result_sha256": "49867cd76f20c8dbaee2fec00df9bf6a..."
+    }
+  ]
+}
+```
+
+When a user enables your mod, the Mod Manager will:
+1. Check the user's vanilla game file checksum.
+2. Match it automatically against the list of `source_sha256` entries.
+3. Apply the corresponding patch seamlessly.
+4. If the user's version is unsupported, cleanly report which versions are supported without altering any game files.
+
+---
+
+## 5. Testing & Publishing
 
 1. Import and enable the ZIP in a test game folder.
 2. Verify game behavior, then test **Disable mod** and **Restore originals** to confirm clean rollback.

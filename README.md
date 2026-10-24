@@ -1,6 +1,6 @@
 # Tribal Hunter Mod Manager
 
-A Windows desktop mod manager for Tribal Hunter by **NaeNae**. Release version **1.0.0**.
+A Windows desktop mod manager for Tribal Hunter by **NaeNae**. Release version **1.2.0**.
 
 Import mod ZIPs, enable or disable them with the game closed, and restore original files from verified backups. The interface uses Tribal Hunter artwork, a leaf asset from the game for its icon, and readable forest and gold panels.
 
