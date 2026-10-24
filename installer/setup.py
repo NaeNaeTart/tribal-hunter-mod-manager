@@ -119,7 +119,7 @@ def main():
         return widget
     heading = label('MOD MANAGER')
     heading.configure(font=('Silkscreen', 25, 'bold'), text_color='#e6bd73')
-    label('Tribal Hunter · Mod Manager 1.0.0')
+    label('Tribal Hunter · Mod Manager 1.2.0')
     label('Choose your Tribal Hunter game folder. Setup installs the Mod Manager, patch compiler and GameBanana one-click support.')
     label('Game folder')
     path = ctk.StringVar(value='')
